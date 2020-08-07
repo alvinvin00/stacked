@@ -2,12 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:stacked_services/stacked_services.dart';
 
-const EdgeInsets _defaultInsetPadding =
-    EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0);
-
 const TextStyle _defaultTextStyle = TextStyle(color: Colors.black);
-const TextStyle _defaultTitleMaterialStyle =
-    TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20);
 const TextStyle _cancelTextStyle = TextStyle(color: Colors.red);
 
 class PlatformButton extends StatelessWidget {
@@ -113,8 +108,8 @@ class PlatformDialog extends StatelessWidget {
       case DialogPlatform.Material:
       default: // TODO: When custom dialog registrations are implemented it'll be shown here
         return AlertDialog(
-          titleTextStyle: Theme.of(context).textTheme.headline6,
-          contentTextStyle: Theme.of(context).textTheme.bodyText1,
+          titleTextStyle: Theme.of(context).dialogTheme.titleTextStyle,
+          contentTextStyle: Theme.of(context).dialogTheme.contentTextStyle,
           title: Text(title),
           content: Text(content),
           actions: actions,

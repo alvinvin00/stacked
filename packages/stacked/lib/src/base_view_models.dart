@@ -6,16 +6,50 @@ import 'package:stacked/src/reactive_service_mixin.dart';
 /// Contains ViewModel functionality for busy state management
 class BaseViewModel extends ChangeNotifier {
   Map<int, bool> _busyStates = Map<int, bool>();
+  Map<int, dynamic> _errorStates = Map<int, dynamic>();
+
+  bool _initialised = false;
+  bool get initialised => _initialised;
+
+  bool _onModelReadyCalled = false;
+  bool get onModelReadyCalled => _onModelReadyCalled;
+
+  bool _disposed = false;
+  bool get disposed => _disposed;
 
   /// Returns the busy status for an object if it exists. Returns false if not present
   bool busy(Object object) => _busyStates[object.hashCode] ?? false;
 
-  /// Returns the busy status of the viewmodel
+  dynamic error(Object object) => _errorStates[object.hashCode];
+
+  /// Returns the busy status of the ViewModel
   bool get isBusy => busy(this);
+
+  /// Returns the error status of the ViewModel
+  bool get hasError => error(this) != null;
+
+  /// Returns the error status of the ViewModel
+  dynamic get modelError => error(this);
+
+  // Returns true if any objects still have a busy status that is true.
+  bool get anyObjectsBusy => _busyStates.values.any((busy) => busy);
 
   /// Marks the viewmodel as busy and calls notify listeners
   void setBusy(bool value) {
     setBusyForObject(this, value);
+  }
+
+  /// Sets the error for the ViewModel
+  void setError(dynamic error) {
+    setErrorForObject(this, error);
+  }
+
+  /// Returns a boolean that indicates if the viewmodel has an error for the key
+  bool hasErrorForKey(Object key) => error(key) != null;
+
+  /// Clears all the errors
+  void clearErrors() {
+    _errorStates.clear();
   }
 
   /// Sets the busy state for the object equal to the value passed in and notifies Listeners
@@ -25,21 +59,69 @@ class BaseViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets the error state for the object equal to the value passed in and notifies Listeners
+  /// If you're using a primitive type the value SHOULD NOT BE CHANGED, since Hashcode uses == value
+  void setErrorForObject(Object object, dynamic value) {
+    _errorStates[object.hashCode] = value;
+    notifyListeners();
+  }
+
+  /// Function that is called when a future throws an error
+  void onFutureError(dynamic error, Object key) {}
+
   /// Sets the ViewModel to busy, runs the future and then sets it to not busy when complete.
   ///
-  /// If a busyKey is su
-  Future runBusyFuture(Future busyFuture, {Object busyObject}) async {
+  /// rethrows [Exception] after setting busy to false for object or class
+  Future runBusyFuture(Future busyFuture,
+      {Object busyObject, bool throwException = false}) async {
     _setBusyForModelOrObject(true, busyObject: busyObject);
-    var value = await busyFuture;
-    _setBusyForModelOrObject(false, busyObject: busyObject);
-    return value;
+    try {
+      var value = await runErrorFuture(busyFuture,
+          key: busyObject, throwException: throwException);
+      _setBusyForModelOrObject(false, busyObject: busyObject);
+      return value;
+    } catch (e) {
+      _setBusyForModelOrObject(false, busyObject: busyObject);
+      if (throwException) rethrow;
+    }
+  }
+
+  Future runErrorFuture(Future future,
+      {Object key, bool throwException = false}) async {
+    try {
+      return await future;
+    } catch (e) {
+      _setErrorForModelOrObject(e, key: key);
+      onFutureError(e, key);
+      if (throwException) rethrow;
+      return Future.value();
+    }
+  }
+
+  /// Sets the initialised value for the model to true. This is called after
+  /// the first initialise special viewModel call
+  void setInitialised(bool value) {
+    _initialised = value;
+  }
+
+  /// Sets the onModelReadyCalled value to true. This is called after this first onModelReady call
+  void setOnModelReadyCalled(bool value) {
+    _onModelReadyCalled = value;
   }
 
   void _setBusyForModelOrObject(bool value, {Object busyObject}) {
     if (busyObject != null) {
-      setBusyForObject(busyObject.hashCode, value);
+      setBusyForObject(busyObject, value);
     } else {
       setBusyForObject(this, value);
+    }
+  }
+
+  void _setErrorForModelOrObject(dynamic value, {Object key}) {
+    if (key != null) {
+      setErrorForObject(key, value);
+    } else {
+      setErrorForObject(this, value);
     }
   }
 
@@ -64,6 +146,19 @@ class BaseViewModel extends ChangeNotifier {
     streamData.initialise();
 
     return streamData;
+  }
+
+  @override
+  void notifyListeners() {
+    if (!disposed) {
+      super.notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 
@@ -98,42 +193,38 @@ abstract class ReactiveViewModel extends BaseViewModel {
 }
 
 @protected
-class DynamicSourceViewModel<T> extends BaseViewModel {
+class DynamicSourceViewModel<T> extends ReactiveViewModel {
   bool changeSource = false;
   void notifySourceChanged({bool clearOldData = false}) {
     changeSource = true;
   }
+
+  @override
+  List<ReactiveServiceMixin> get reactiveServices => [];
 }
 
 class _SingleDataSourceViewModel<T> extends DynamicSourceViewModel {
   T _data;
   T get data => _data;
 
-  bool _hasError;
-  bool get hasError => _hasError;
-
   dynamic _error;
-  dynamic get error => _error;
 
-  bool get dataReady => _data != null && !_hasError;
+  @override
+  dynamic error([Object object]) => _error;
+
+  bool get dataReady => _data != null && !hasError;
 }
 
 class _MultiDataSourceViewModel extends DynamicSourceViewModel {
   Map<String, dynamic> _dataMap;
   Map<String, dynamic> get dataMap => _dataMap;
 
-  Map<String, bool> _errorMap;
-
-  Map<String, dynamic> _errors;
-  dynamic getError(String key) => _errors[key];
-
-  bool hasError(String key) => _errorMap[key] ?? false;
-  bool dataReady(String key) =>
-      _dataMap[key] != null && (_errorMap[key] == null);
+  bool dataReady(String key) => _dataMap[key] != null && (error(key) == null);
 }
 
 /// Provides functionality for a ViewModel that's sole purpose it is to fetch data using a [Future]
-abstract class FutureViewModel<T> extends _SingleDataSourceViewModel<T> {
+abstract class FutureViewModel<T> extends _SingleDataSourceViewModel<T>
+    implements Initialisable {
   /// The future that fetches the data and sets the view to busy
   @Deprecated('Use the futureToRun function')
   Future<T> get future => null;
@@ -144,50 +235,60 @@ abstract class FutureViewModel<T> extends _SingleDataSourceViewModel<T> {
 
   Future<T> futureToRun();
 
-  Future runFuture() async {
-    _hasError = false;
+  /// Indicates if you want the error caught in futureToRun to be rethrown
+  bool get rethrowException => false;
+
+  Future initialise() async {
+    setError(null);
     _error = null;
     // We set busy manually as well because when notify listeners is called to clear error messages the
     // ui is rebuilt and if you expect busy to be true it's not.
     setBusy(true);
     notifyListeners();
 
-    _data = await runBusyFuture(futureToRun()).catchError((error) {
-      _hasError = true;
+    _data = await runBusyFuture(futureToRun(), throwException: true)
+        .catchError((error) {
+      setError(error);
       _error = error;
       setBusy(false);
       onError(error);
       notifyListeners();
+      if (rethrowException) {
+        throw error;
+      }
     });
+
+    if (_data != null) {
+      onData(_data);
+    }
 
     changeSource = false;
   }
 
+  /// Called when an error occurs within the future being run
   void onError(error) {}
+
+  /// Called after the data has been set
+  void onData(T data) {}
 }
 
 /// Provides functionality for a ViewModel to run and fetch data using multiple future
-abstract class MultipleFutureViewModel extends _MultiDataSourceViewModel {
+abstract class MultipleFutureViewModel extends _MultiDataSourceViewModel
+    implements Initialisable {
   Map<String, Future Function()> get futuresMap;
 
   Completer _futuresCompleter;
   int _futuresCompleted;
 
   void _initialiseData() {
-    if (_errorMap == null) {
-      _errorMap = Map<String, bool>();
-    }
     if (_dataMap == null) {
       _dataMap = Map<String, dynamic>();
-    }
-    if (_errors == null) {
-      _errors = Map<String, dynamic>();
     }
 
     _futuresCompleted = 0;
   }
 
-  Future runFutures() {
+  Future initialise() {
     _futuresCompleter = Completer();
     _initialiseData();
     // We set busy manually as well because when notify listeners is called to clear error messages the
@@ -196,14 +297,15 @@ abstract class MultipleFutureViewModel extends _MultiDataSourceViewModel {
     notifyListeners();
 
     for (var key in futuresMap.keys) {
-      runBusyFuture(futuresMap[key](), busyObject: key).then((futureData) {
+      runBusyFuture(futuresMap[key](), busyObject: key, throwException: true)
+          .then((futureData) {
         _dataMap[key] = futureData;
+        setBusyForObject(key, false);
         notifyListeners();
         onData(key);
         _incrementAndCheckFuturesCompleted();
       }).catchError((error) {
-        _errorMap[key] = true;
-        _errors[key] = error;
+        setErrorForObject(key, error);
         setBusyForObject(key, false);
         onError(key: key, error: error);
         notifyListeners();
@@ -230,7 +332,8 @@ abstract class MultipleFutureViewModel extends _MultiDataSourceViewModel {
 }
 
 /// Provides functionality for a ViewModel to run and fetch data using multiple streams
-abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
+abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel
+    implements Initialisable {
   // Every MultipleStreamViewModel must override streamDataMap
   // StreamData requires a stream, but lifecycle events are optional
   // if a lifecyle event isn't defined we use the default ones here
@@ -242,10 +345,13 @@ abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
   Map<String, StreamSubscription> get streamsSubscriptions =>
       _streamsSubscriptions;
 
+  /// Returns the stream subscription associated with the key
+  StreamSubscription getSubscriptionForKey(String key) =>
+      _streamsSubscriptions[key];
+
   void initialise() {
     _dataMap = Map<String, dynamic>();
-    _errorMap = Map<String, bool>();
-    _errors = Map<String, dynamic>();
+    clearErrors();
     _streamsSubscriptions = Map<String, StreamSubscription>();
 
     if (!changeSource) {
@@ -256,8 +362,7 @@ abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
       // If a lifecycle function isn't supplied, we fallback to default
       _streamsSubscriptions[key] = streamsMap[key].stream.listen(
         (incomingData) {
-          _errorMap.remove(key);
-          _errors.remove(key);
+          setErrorForObject(key, null);
           notifyListeners();
           // Extra security in case transformData isnt sent
           var interceptedData = streamsMap[key].transformData == null
@@ -276,8 +381,7 @@ abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
               : onData(key, _dataMap[key]);
         },
         onError: (error) {
-          _errorMap[key] = true;
-          _errors[key] = error;
+          setErrorForObject(key, error);
           _dataMap[key] = null;
 
           streamsMap[key].onError != null
@@ -300,8 +404,7 @@ abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
 
     if (clearOldData) {
       dataMap.clear();
-      _errorMap.clear();
-      _errors.clear();
+      clearErrors();
     }
 
     notifyListeners();
@@ -326,6 +429,7 @@ abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
     if (_streamsSubscriptions != null) {
       for (var key in _streamsSubscriptions.keys) {
         _streamsSubscriptions[key].cancel();
+        onCancel(key);
       }
 
       _streamsSubscriptions.clear();
@@ -334,11 +438,10 @@ abstract class MultipleStreamViewModel extends _MultiDataSourceViewModel {
 }
 
 abstract class StreamViewModel<T> extends _SingleDataSourceViewModel<T>
-    implements DynamicSourceViewModel {
+    implements DynamicSourceViewModel, Initialisable {
   /// Stream to listen to
   Stream<T> get stream;
 
-  @visibleForTesting
   StreamSubscription get streamSubscription => _streamSubscription;
 
   StreamSubscription _streamSubscription;
@@ -359,7 +462,7 @@ abstract class StreamViewModel<T> extends _SingleDataSourceViewModel<T>
   void initialise() {
     _streamSubscription = stream.listen(
       (incomingData) {
-        _hasError = false;
+        setError(null);
         _error = null;
         notifyListeners();
         // Extra security in case transformData isnt sent
@@ -376,7 +479,7 @@ abstract class StreamViewModel<T> extends _SingleDataSourceViewModel<T>
         notifyListeners();
       },
       onError: (error) {
-        _hasError = true;
+        setError(error);
         _error = error;
         _data = null;
         onError(error);
@@ -449,7 +552,7 @@ class StreamData<T> extends _SingleDataSourceViewModel<T> {
   void initialise() {
     _streamSubscription = stream.listen(
       (incomingData) {
-        _hasError = false;
+        setError(null);
         _error = null;
         notifyListeners();
         // Extra security in case transformData isnt sent
@@ -466,7 +569,7 @@ class StreamData<T> extends _SingleDataSourceViewModel<T> {
         onData(_data);
       },
       onError: (error) {
-        _hasError = true;
+        setError(error);
         _data = null;
         onError(error);
         notifyListeners();
@@ -483,4 +586,9 @@ class StreamData<T> extends _SingleDataSourceViewModel<T> {
 
     super.dispose();
   }
+}
+
+/// Interface: Additional actions that should be implemented by spcialised ViewModels
+abstract class Initialisable {
+  void initialise();
 }

@@ -1,3 +1,109 @@
+## 1.7.5
+
+- Adds rethrow capability to the `FutureViewModel`
+
+## 1.7.4
+
+- Makes index tracking viewmodel a reactive viewmodel so it can react to services
+
+## 1.7.3+2
+
+- REVERT: Use hascode for hasErrorForObject function instead of value directly
+
+## 1.7.3+1
+
+- Use hascode for hasErrorForObject function instead of value directly
+
+## 1.7.3
+
+- Removes old error handling code for specialty viewmodels
+
+## 1.7.2
+
+- Adds `RxSet` to the reactive list of functionalities.
+
+## 1.7.1+1
+
+- Adds `initialiseSpecialViewModelsOnce` to the readme.
+
+## 1.7.1
+
+- Adds `initialiseSpecialViewModelsOnce` property to set initialise function call to only fire once.
+
+## 1.7.0+1
+
+- Adds more migration notes
+
+## 1.7.0 - [BREAKING CHANGES]
+
+### Migrate from 1.6.1 -> 1.7
+
+- hasError(key) -> error(key) for multiple ViewModel
+
+- Adds `IndexTrackingViewModel` for help with BottomNavBar
+- Adds better error handling for `BaseViewModel`
+
+## 1.6.1+1
+
+- Adds `fireOnModelReadyOnce` to readme
+
+## 1.6.1
+
+- Adds `fireOnModelReadyOnce` to be used together with `disposeViewModel` to ensure a viewmodel that's already been constructed doesn't call onModelReady every time it's shown on screen.
+
+## 1.6.0+1
+
+- Adds onCancel call for the MultiStreamViewModel
+
+## 1.6.0
+
+- Adds dispose protection when calling notifyListeners.
+
+## 1.5.8
+
+- Adds `anyObjectsBusy` to `FutureViewModels` to report if there are any futures's that are still running
+
+## 1.5.7+1
+
+- fixed busy state hash code problem
+
+## 1.5.7
+
+- Exposes notifyListeners to the service for rebuilding ViewModels that are listening
+
+## 1.5.6+1
+
+- added back busy to false state when busy future is complete without an error
+
+## 1.5.6
+
+- runBusyFuture now sets itself to not busy when exception is thrown
+- runBusyFuture has parameter throwException which will rethrow the caught exception to the caller
+
+## 1.5.5+1
+
+- Reverted commit below
+
+## 1.5.5
+
+- Added fix to set busy back to false when the future throws an exception
+
+## 1.5.4+1
+
+- Added `MultipleStreamViewModel` example into the readme
+
+## 1.5.4
+
+- Made specialty viewmodels reactive as well so you can supply reactive services as an override
+
+## 1.5.3
+
+- Expose subscription for single stream viewmodel and getSubscriptionForKey for multiple stream viewmodel.
+
+## 1.5.2
+
+- Added `onData` function into `FutureViewModel` that can be overridden
+
 ## 1.5.1
 
 - Ensure model is busy as soon as runFuture notifyListeners for the first time

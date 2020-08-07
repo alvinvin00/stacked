@@ -5,15 +5,28 @@ const _SingleFutureExceptionFailMessage = 'Future to Run failed';
 
 class TestFutureViewModel extends FutureViewModel<int> {
   final bool fail;
-  TestFutureViewModel({this.fail = false});
+  final bool shouldRethrow;
+  TestFutureViewModel({
+    this.fail = false,
+    this.shouldRethrow = false,
+  });
 
   int numberToReturn = 5;
+  bool dataCalled = false;
+
+  @override
+  bool get rethrowException => shouldRethrow;
 
   @override
   Future<int> futureToRun() async {
     if (fail) throw Exception(_SingleFutureExceptionFailMessage);
     await Future.delayed(Duration(milliseconds: 20));
     return numberToReturn;
+  }
+
+  @override
+  void onData(int data) {
+    dataCalled = true;
   }
 }
 
@@ -23,7 +36,12 @@ const String _NumberDelayExceptionMessage = 'getNumberAfterDelay failed';
 
 class TestMultipleFutureViewModel extends MultipleFutureViewModel {
   final bool failOne;
-  TestMultipleFutureViewModel({this.failOne = false});
+  final int futureOneDuration;
+  final int futureTwoDuration;
+  TestMultipleFutureViewModel(
+      {this.failOne = false,
+      this.futureOneDuration = 300,
+      this.futureTwoDuration = 400});
 
   int numberToReturn = 5;
 
@@ -37,12 +55,12 @@ class TestMultipleFutureViewModel extends MultipleFutureViewModel {
     if (failOne) {
       throw Exception(_NumberDelayExceptionMessage);
     }
-    await Future.delayed(Duration(milliseconds: 300));
+    await Future.delayed(Duration(milliseconds: futureOneDuration));
     return numberToReturn;
   }
 
   Future<String> getStringAfterDelay() async {
-    await Future.delayed(Duration(milliseconds: 400));
+    await Future.delayed(Duration(milliseconds: futureTwoDuration));
     return 'String data';
   }
 }
@@ -51,7 +69,7 @@ void main() {
   group('FutureViewModel', () {
     test('When future is complete data should be set and ready', () async {
       var futureViewModel = TestFutureViewModel();
-      await futureViewModel.runFuture();
+      await futureViewModel.initialise();
       expect(futureViewModel.data, 5);
       expect(futureViewModel.dataReady, true);
     });
@@ -59,7 +77,7 @@ void main() {
     test('When a future fails it should indicate there\'s an error and no data',
         () async {
       var futureViewModel = TestFutureViewModel(fail: true);
-      await futureViewModel.runFuture();
+      await futureViewModel.initialise();
       expect(futureViewModel.hasError, true);
       expect(futureViewModel.data, null,
           reason: 'No data should be set when there\'s a failure.');
@@ -68,41 +86,62 @@ void main() {
 
     test('When a future runs it should indicate busy', () async {
       var futureViewModel = TestFutureViewModel();
-      futureViewModel.runFuture();
+      futureViewModel.initialise();
       expect(futureViewModel.isBusy, true);
     });
 
     test('When a future fails it should indicate NOT busy', () async {
       var futureViewModel = TestFutureViewModel(fail: true);
-      await futureViewModel.runFuture();
+      await futureViewModel.initialise();
       expect(futureViewModel.isBusy, false);
+    });
+
+    test(
+        'When a future fails and rethrowException is true, should throw exception',
+        () async {
+      var futureViewModel =
+          TestFutureViewModel(fail: true, shouldRethrow: true);
+      expect(() async => await futureViewModel.initialise(), throwsException);
     });
 
     test('When a future fails it should set error to exception', () async {
       var futureViewModel = TestFutureViewModel(fail: true);
-      await futureViewModel.runFuture();
-      expect(futureViewModel.error.message, _SingleFutureExceptionFailMessage);
+      await futureViewModel.initialise();
+      expect(futureViewModel.modelError.message,
+          _SingleFutureExceptionFailMessage);
+    });
+
+    test('When a future fails onData should not be called', () async {
+      var futureViewModel = TestFutureViewModel(fail: true);
+      await futureViewModel.initialise();
+      expect(futureViewModel.dataCalled, false);
+    });
+
+    test('When a future passes onData should not called', () async {
+      var futureViewModel = TestFutureViewModel();
+      await futureViewModel.initialise();
+      expect(futureViewModel.dataCalled, true);
     });
 
     group('Dynamic Source Tests', () {
       test('notifySourceChanged - When called should re-run Future', () async {
         var futureViewModel = TestFutureViewModel();
-        await futureViewModel.runFuture();
+        await futureViewModel.initialise();
         expect(futureViewModel.data, 5);
         futureViewModel.numberToReturn = 10;
         futureViewModel.notifySourceChanged();
-        await futureViewModel.runFuture();
+        await futureViewModel.initialise();
         expect(futureViewModel.data, 10);
       });
     });
   });
 
-  group('MultipleFutureViewModel', () {
+  group('MultipleFutureViewModel -', () {
     test(
         'When running multiple futures the associated key should hold the value when complete',
         () async {
       var futureViewModel = TestMultipleFutureViewModel();
-      await futureViewModel.runFutures();
+      await futureViewModel.initialise();
 
       expect(futureViewModel.dataMap[NumberDelayFuture], 5);
       expect(futureViewModel.dataMap[StringDelayFuture], 'String data');
@@ -112,17 +151,17 @@ void main() {
         'When one of multiple futures fail only the failing one should have an error',
         () async {
       var futureViewModel = TestMultipleFutureViewModel(failOne: true);
-      await futureViewModel.runFutures();
+      await futureViewModel.initialise();
 
-      expect(futureViewModel.hasError(NumberDelayFuture), true);
-      expect(futureViewModel.hasError(StringDelayFuture), false);
+      expect(futureViewModel.hasErrorForKey(NumberDelayFuture), true);
+      expect(futureViewModel.hasErrorForKey(StringDelayFuture), false);
     });
 
     test(
         'When one of multiple futures fail the passed one should have data and failing one not',
         () async {
       var futureViewModel = TestMultipleFutureViewModel(failOne: true);
-      await futureViewModel.runFutures();
+      await futureViewModel.initialise();
 
       expect(futureViewModel.dataMap[NumberDelayFuture], null);
       expect(futureViewModel.dataMap[StringDelayFuture], 'String data');
@@ -131,7 +170,7 @@ void main() {
     test('When multiple futures run the key should be set to indicate busy',
         () async {
       var futureViewModel = TestMultipleFutureViewModel();
-      futureViewModel.runFutures();
+      futureViewModel.initialise();
 
       expect(futureViewModel.busy(NumberDelayFuture), true);
       expect(futureViewModel.busy(StringDelayFuture), true);
@@ -141,7 +180,7 @@ void main() {
         'When multiple futures are complete the key should be set to indicate NOT busy',
         () async {
       var futureViewModel = TestMultipleFutureViewModel();
-      await futureViewModel.runFutures();
+      await futureViewModel.initialise();
 
       expect(futureViewModel.busy(NumberDelayFuture), false);
       expect(futureViewModel.busy(StringDelayFuture), false);
@@ -149,7 +188,7 @@ void main() {
 
     test('When a future fails busy should be set to false', () async {
       var futureViewModel = TestMultipleFutureViewModel(failOne: true);
-      await futureViewModel.runFutures();
+      await futureViewModel.initialise();
 
       expect(futureViewModel.busy(NumberDelayFuture), false);
       expect(futureViewModel.busy(StringDelayFuture), false);
@@ -157,22 +196,36 @@ void main() {
 
     test('When a future fails should set error for future key', () async {
       var futureViewModel = TestMultipleFutureViewModel(failOne: true);
-      await futureViewModel.runFutures();
+      await futureViewModel.initialise();
 
-      expect(futureViewModel.getError(NumberDelayFuture).message,
+      expect(futureViewModel.error(NumberDelayFuture).message,
           _NumberDelayExceptionMessage);
 
-      expect(futureViewModel.getError(StringDelayFuture), null);
+      expect(futureViewModel.error(StringDelayFuture), null);
+    });
+
+    test(
+        'When 1 future is still running out of two anyObjectsBusy should return true',
+        () async {
+      var futureViewModel = TestMultipleFutureViewModel(
+          futureOneDuration: 10, futureTwoDuration: 60);
+      futureViewModel.initialise();
+      await Future.delayed(Duration(milliseconds: 30));
+
+      expect(futureViewModel.busy(NumberDelayFuture), false,
+          reason: 'String future should be done at this point');
+      expect(futureViewModel.anyObjectsBusy, true,
+          reason: 'Should be true because second future is still running');
     });
 
     group('Dynamic Source Tests', () {
       test('notifySourceChanged - When called should re-run Future', () async {
         var futureViewModel = TestMultipleFutureViewModel();
-        await futureViewModel.runFutures();
+        await futureViewModel.initialise();
         expect(futureViewModel.dataMap[NumberDelayFuture], 5);
         futureViewModel.numberToReturn = 10;
         futureViewModel.notifySourceChanged();
-        await futureViewModel.runFutures();
+        await futureViewModel.initialise();
         expect(futureViewModel.dataMap[NumberDelayFuture], 10);
       });
     });
