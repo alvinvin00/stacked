@@ -17,6 +17,9 @@ abstract class ViewModelBuilderWidget<T extends ChangeNotifier>
     Widget child,
   );
 
+  ///Indicates if special viewmodels should re-run initialization process on insert.
+  bool get initialiseSpecialViewModelsOnce => false;
+
   /// A builder that builds the ViewModel for this UI - Required
   T viewModelBuilder(BuildContext context);
 
@@ -79,6 +82,7 @@ abstract class ViewModelBuilderWidget<T extends ChangeNotifier>
         onModelReady: onViewModelReady,
         disposeViewModel: disposeViewModel,
         createNewModelOnInsert: createNewModelOnInsert,
+        initialiseSpecialViewModelsOnce: initialiseSpecialViewModelsOnce,
       );
     }
   }
